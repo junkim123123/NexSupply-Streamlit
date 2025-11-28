@@ -509,6 +509,20 @@ def render_home_page():
                                 contact_email = Config.get_consultation_email()
                                 st.error(f"⚠️ **Analysis Failed. (Error Code: {error_code})**\n\nWe apologize for the issue. Please **refresh the page** or email us the details directly at **{contact_email}**")
                                 st.session_state.last_error = error_code
+                                
+                                # Log error internally (not shown to user) for debugging
+                                import logging
+                                logger = logging.getLogger(__name__)
+                                error_data = result.get("data", "No error details available")
+                                error_mode = result.get("mode", "unknown")
+                                logger.error(f"Analysis failed (code {error_code}): mode={error_mode}, data={error_data}")
+                                # Print to console/terminal for easier debugging
+                                print(f"\n{'='*60}")
+                                print(f"[ERROR A-101] Analysis returned success=False")
+                                print(f"Mode: {error_mode}")
+                                print(f"Error Data: {error_data}")
+                                print(f"Full Result: {result}")
+                                print(f"{'='*60}\n")
                         
                         except Exception as e:
                             status.update(label="❌ Error occurred", state="error")
@@ -521,8 +535,17 @@ def render_home_page():
                             
                             # Log error internally (not shown to user)
                             import logging
+                            import traceback
                             logger = logging.getLogger(__name__)
                             logger.error(f"Analysis error (code {error_code}): {str(e)}", exc_info=True)
+                            # Print full traceback to console/terminal for debugging
+                            print(f"\n{'='*60}")
+                            print(f"[ERROR A-102] Exception caught during analysis")
+                            print(f"Exception Type: {type(e).__name__}")
+                            print(f"Exception Message: {str(e)}")
+                            print(f"Full Traceback:")
+                            traceback.print_exc()
+                            print(f"{'='*60}\n")
         
         # Demo button (shown separately if there was an error)
         if st.session_state.get("last_error"):

@@ -608,6 +608,8 @@ def validate_and_normalize_extraction(llm_response_str: str) -> tuple[Dict[str, 
     import json
     import re
     
+    logger = logging.getLogger(__name__)
+    
     # Clean and parse JSON first
     try:
         cleaned = llm_response_str.strip()
@@ -625,9 +627,16 @@ def validate_and_normalize_extraction(llm_response_str: str) -> tuple[Dict[str, 
         
         data = json.loads(cleaned)
     except json.JSONDecodeError as e:
-        return None, f"JSON parse error: {str(e)}"
+        error_msg = f"JSON parse error: {str(e)}"
+        logger.error(f"[Extraction] {error_msg}")
+        print(f"[Extraction Error] JSON parse failed: {str(e)}")
+        print(f"[Extraction Error] Raw LLM response: {llm_response_str[:500]}...")
+        return None, error_msg
     except Exception as e:
-        return None, f"Error cleaning response: {str(e)}"
+        error_msg = f"Error cleaning response: {str(e)}"
+        logger.error(f"[Extraction] {error_msg}")
+        print(f"[Extraction Error] Cleaning failed: {str(e)}")
+        return None, error_msg
     
     # Try to validate with Pydantic if available
     try:
@@ -653,63 +662,33 @@ def validate_and_normalize_extraction(llm_response_str: str) -> tuple[Dict[str, 
         
     except ImportError:
         # Pydantic not available, use direct normalization
+        logger.warning("[Extraction] Pydantic not available, using direct normalization")
         return normalize_extracted_values(data), None
     except ValidationError as e:
-        # Pydantic validation failed, try direct normalization anyway
+        # Pydantic validation failed - log details and try direct normalization
+        logger.warning(f"[Extraction] Pydantic validation failed: {str(e)}")
+        print(f"\n{'='*60}")
+        print(f"[Extraction Warning] Pydantic validation failed")
+        print(f"Raw data from LLM: {data}")
+        print(f"Validation error: {str(e)}")
+        print(f"{'='*60}\n")
         try:
-            return normalize_extracted_values(data), None
+            normalized = normalize_extracted_values(data)
+            logger.info("[Extraction] Direct normalization succeeded after Pydantic failure")
+            return normalized, None
         except Exception as norm_err:
-            return None, f"Pydantic validation failed: {str(e)}, normalization also failed: {str(norm_err)}"
+            error_msg = f"Pydantic validation failed: {str(e)}, normalization also failed: {str(norm_err)}"
+            logger.error(f"[Extraction] {error_msg}")
+            print(f"[Extraction Error] Normalization also failed: {str(norm_err)}")
+            return None, error_msg
     except Exception as e:
         # Other error, try direct normalization
+        logger.warning(f"[Extraction] Unexpected error: {str(e)}, trying direct normalization")
+        print(f"[Extraction Warning] Unexpected error: {str(e)}")
         try:
             return normalize_extracted_values(data), None
         except Exception as norm_err:
-            return None, f"Error: {str(e)}, normalization also failed: {str(norm_err)}"
-    
-    try:
-        # Clean response text
-        cleaned = llm_response_str.strip()
-        
-        # Remove markdown code blocks
-        if "```json" in cleaned:
-            cleaned = re.sub(r'```json\s*\n?(.*?)\n?```', r'\1', cleaned, flags=re.DOTALL)
-        elif "```" in cleaned:
-            cleaned = re.sub(r'```\s*\n?(.*?)\n?```', r'\1', cleaned, flags=re.DOTALL)
-        
-        # Extract JSON object
-        first_brace = cleaned.find('{')
-        last_brace = cleaned.rfind('}')
-        if first_brace != -1 and last_brace != -1:
-            cleaned = cleaned[first_brace:last_brace + 1]
-        
-        # Validate with Pydantic
-        parsed = SourcingIntents.model_validate_json(cleaned)
-        
-        # Convert to dict and normalize
-        extracted_dict = parsed.model_dump()
-        normalized = normalize_extracted_values(extracted_dict)
-        
-        # Add volume_category if not present
-        if "volume_category" not in normalized:
-            normalized["volume_category"] = infer_volume_category(
-                normalized.get("volume_units"),
-                normalized.get("volume_raw")
-            )
-        
-        return normalized, None
-        
-    except ValidationError as e:
-        # Pydantic validation failed - try to extract what we can
-        try:
-            data = json.loads(cleaned)
-            # Use normalize_extracted_values even if validation failed
-            normalized = normalize_extracted_values(data)
-            return normalized, f"Validation warning: {str(e)}"
-        except:
-            return None, f"Pydantic validation failed: {str(e)}"
-    except json.JSONDecodeError as e:
-        return None, f"JSON parse error: {str(e)}"
-    except Exception as e:
-        return None, f"Unexpected error: {str(e)}"
+            error_msg = f"Error: {str(e)}, normalization also failed: {str(norm_err)}"
+            logger.error(f"[Extraction] {error_msg}")
+            return None, error_msg
 
