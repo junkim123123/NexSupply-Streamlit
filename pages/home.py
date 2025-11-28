@@ -4,7 +4,7 @@ Clean, unified input area with polished Quick Start cards
 """
 
 import streamlit as st
-from typing import Optional
+import time
 
 from services.gemini_service import GeminiService
 from state.session_state import get_sourcing_state
@@ -35,11 +35,12 @@ def convert_api_response(data: dict) -> dict:
     }
     
     cost_components = cost.get("cost_components", {})
+    # Default percentages (will be recalculated if cost_components exist)
     landed_cost = {
-        "product": 45,
-        "shipping": 25,
-        "customs": 18,
-        "handling": 12,
+        "product": 45,  # Default: will be recalculated from actual cost data
+        "shipping": 25,  # Default: will be recalculated from actual cost data
+        "customs": 18,  # Default: will be recalculated from actual cost data
+        "handling": 12,  # Default: will be recalculated from actual cost data
         "total_landed_cost_usd": cost.get("total_landed_cost_usd", 0),
         "cost_per_unit_usd": cost.get("cost_per_unit_usd", 0),
         "quantity_basis": cost.get("quantity_basis", 1000),
@@ -47,8 +48,8 @@ def convert_api_response(data: dict) -> dict:
         "hidden_cost_warnings": cost.get("hidden_cost_warnings", []),
     }
     
+    # Recalculate percentages from actual cost components if available
     if cost_components:
-        total = cost.get("cost_per_unit_usd", 1) or 1
         fob = cost_components.get("fob_price_usd", 0)
         freight = cost_components.get("ocean_freight_usd", 0) + cost_components.get("inland_freight_usd", 0)
         customs = cost_components.get("customs_duty_usd", 0) + cost_components.get("customs_broker_fee_usd", 0)
@@ -460,7 +461,6 @@ def render_home_page():
                         st.write("⏱️ *This analysis takes 10-20 seconds*")
                         st.write("")
                         st.write("📊 **Step 1/3:** Calculating Landed Cost & Margin Estimate...")
-                        import time
                         start_time = time.time()
                         
                         try:
@@ -492,7 +492,6 @@ def render_home_page():
                                 status.update(label="✅ Step 3/3: Generating report...")
                             
                             st.write("📊 **Step 3/3:** Vetting Suppliers & Running Risk Assessment...")
-                            time.sleep(0.3)  # Brief pause for UX
                             
                             if result["success"]:
                                 status.update(label="✅ Analysis complete!", state="complete")
@@ -572,7 +571,7 @@ def render_home_page():
             "key": "quick_cost",
             "sub_key": "quick_cost_sub",
             "template_key": "template_cost",
-            "mode": "market",
+            "mode": "cost",
             "color": "#10B981",  # Green
             "expectation": "Great for early product ideas."
         },
@@ -581,7 +580,7 @@ def render_home_page():
             "key": "quick_market",
             "sub_key": "quick_market_sub",
             "template_key": "template_market",
-            "mode": "cost",
+            "mode": "market",
             "color": "#F59E0B",  # Amber
             "expectation": "Use this before deep cost analysis."
         },
@@ -592,7 +591,7 @@ def render_home_page():
             "template_key": "template_leadtime",
             "mode": "leadtime",
             "color": "#EC4899",  # Pink
-            "expectation": "Use this before deep cost analysis."
+            "expectation": "Critical for production planning and inventory management."
         },
     ]
     

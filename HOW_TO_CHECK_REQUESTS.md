@@ -139,3 +139,5 @@ with open('requests.csv', 'w', newline='', encoding='utf-8') as f:
    - Analytics 페이지는 인증 없이 접근 가능 (현재)
    - 프로덕션에서는 인증 추가 권장
 
+
+

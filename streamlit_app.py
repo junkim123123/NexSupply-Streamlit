@@ -8,8 +8,36 @@ from dotenv import load_dotenv
 load_dotenv(override=False)
 
 import streamlit as st
+import streamlit.components.v1 as components
 from state.session_state import init_session_state
 from utils.config import AppSettings
+
+
+# =============================================================================
+# PWA SETUP
+# =============================================================================
+
+def setup_pwa():
+    """PWA 메타 태그 및 manifest 링크 추가"""
+    pwa_meta = """
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#00BFA5">
+    <meta name="color-scheme" content="light dark">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="NexSupply">
+    <link rel="apple-touch-icon" href="https://app.nexsupply.app/icon-192.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="https://app.nexsupply.app/icon-192.png">
+    <link rel="icon" type="image/png" sizes="512x512" href="https://app.nexsupply.app/icon-512.png">
+    <script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('service-worker.js');
+        }
+    </script>
+    """
+    components.html(pwa_meta, height=0)
 
 
 # =============================================================================
@@ -19,8 +47,8 @@ from utils.config import AppSettings
 def configure_page():
     """Configure Streamlit page settings."""
     st.set_page_config(
-        page_title=f"{AppSettings.APP_NAME} - Smart Sourcing with AI",
-        page_icon="🏭",
+        page_title="NexSupply",
+        page_icon="🎯",
         layout="wide",
         initial_sidebar_state="collapsed"
     )
@@ -343,6 +371,7 @@ from pages.results_dashboard import render_results_page
 def main():
     """Main application entry point."""
     configure_page()
+    setup_pwa()
     apply_global_css()
     init_session_state()
     
