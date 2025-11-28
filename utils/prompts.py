@@ -10,6 +10,7 @@ Key Principles:
 """
 
 from datetime import datetime
+from typing import Optional, Dict, Any
 
 # =============================================================================
 # SYSTEM INSTRUCTION (Core AI Personality)
@@ -726,6 +727,12 @@ Use these numbers when reasoning about margin.
 
 If this array is empty or not provided, you MUST output `suppliers: []` in the final JSON.
 
+[6] Optional user-provided market research data
+
+{research_data}
+
+If research data is provided, use these values to inform your analysis. Research data takes precedence over general estimates.
+
 ---
 
 ### Output format
@@ -735,8 +742,9 @@ Return EXACTLY one JSON object with this top-level shape:
 ```json
 {{
   "product_name": "string - descriptive product name",
-  "target_market": "string",
-  "channel": "string",
+  "target_market": "string - MUST extract from user input (e.g., '미국' → 'USA', 'US' → 'USA', '유럽' → 'EU')",
+  "channel": "string - MUST extract from user input (e.g., '편의점 시장' → 'Convenience Store', 'Amazon FBA' → 'Amazon FBA', '온라인' → 'Online')",
+  "volume_units": 0,
   "reliability_level": "High | Medium | Low",
   "reliability_score": 0.0,
   "data_coverage_notes": "string",
@@ -781,10 +789,36 @@ Return EXACTLY one JSON object with this top-level shape:
 
 ### Detailed rules
 
-1. **Target market and channel**
-   * If the user explicitly mentions country or region, use that as `target_market`.
-   * If not, infer conservatively from context (e.g., "US Amazon seller" → target_market = "USA", channel = "Amazon FBA").
-   * If you cannot infer, set target_market and channel to "USA" and "Retail" as defaults.
+1. **CRITICAL: Extract target_market, channel, and volume_units from user input**
+   * **Target market (`target_market`):**
+     * MUST parse from user input. Examples:
+       * "미국", "US", "USA", "United States" → "USA"
+       * "유럽", "EU", "Europe" → "EU"
+       * "영국", "UK", "United Kingdom" → "UK"
+       * "캐나다", "Canada" → "Canada"
+     * If not mentioned, default to "USA"
+   
+   * **Channel (`channel`):**
+     * MUST parse from user input. Examples:
+       * "편의점 시장", "편의점" → "Convenience Store"
+       * "Amazon FBA", "FBA", "아마존" → "Amazon FBA"
+       * "온라인", "online", "e-commerce" → "Online"
+       * "소매", "retail" → "Retail"
+       * "도매", "wholesale" → "Wholesale"
+     * If not mentioned, default to "Retail"
+   
+   * **Volume (`volume_units`):**
+     * MUST parse quantity from user input. Examples:
+       * "200만개", "200만 개" → 2000000
+       * "5천개", "5천 개" → 5000
+       * "2 million units" → 2000000
+       * "5000 units" → 5000
+       * "100만" → 1000000
+     * Korean number units: 만=10000, 천=1000, 백=100
+     * English: million=1000000, thousand/k=1000
+     * If not mentioned, use 5000 as default
+   
+   * **IMPORTANT:** These values will be used for cost calculation. Incorrect parsing leads to wrong analysis results.
 
 2. **Reliability**
    * Use `High` only if:
@@ -837,7 +871,8 @@ def build_hybrid_prompt(
     category_label: str,
     landed_cost_json: str,
     image_summary: str = "",
-    suppliers_db_json: str = "[]"
+    suppliers_db_json: str = "[]",
+    research_data: Optional[Dict[str, Any]] = None
 ) -> str:
     """
     Build the hybrid prompt for Gemini.
@@ -849,16 +884,22 @@ def build_hybrid_prompt(
         landed_cost_json: JSON string from compute_landed_cost()
         image_summary: Optional image description
         suppliers_db_json: Optional supplier database JSON
+        research_data: Optional user-provided market research data
     
     Returns:
         Formatted prompt string
     """
+    from utils.research_data import format_research_data_for_prompt
+    
+    research_data_str = format_research_data_for_prompt(research_data)
+    
     return HYBRID_USER_PROMPT_TEMPLATE.format(
         user_input=user_input,
         image_summary=image_summary if image_summary else "No image provided.",
         category_id=category_id,
         category_label=category_label,
         landed_cost_json=landed_cost_json,
-        suppliers_db_json=suppliers_db_json
+        suppliers_db_json=suppliers_db_json,
+        research_data=research_data_str
     )
 

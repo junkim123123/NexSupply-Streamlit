@@ -70,12 +70,15 @@ class SourcingState:
         Returns:
             Dictionary with keys:
             - query: str (text query)
+            - context_query: str (context/requirements text)
             - file_bytes: Optional[bytes] (image/document data)
             - file_mime_type: Optional[str] (MIME type of file)
             - file_name: Optional[str] (original filename)
         """
+        context_query = st.session_state.get("context_query", "")
         return {
             "query": self.query,
+            "context_query": context_query,
             "file_bytes": self.file_bytes,
             "file_mime_type": self.file_mime_type,
             "file_name": self.file_name

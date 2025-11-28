@@ -19,10 +19,18 @@ class OrderParams:
     """Parameters for landed cost calculation."""
     category_id: str
     units: int
-    route: str = "cn_to_us_west_coast"
-    incoterm: str = "DDP"
+    route: str = None
+    incoterm: str = None
     retail_price_per_unit: Optional[float] = None
     custom_unit_weight_kg: Optional[float] = None  # Override default
+    
+    def __post_init__(self):
+        """Set defaults from AppSettings if not provided."""
+        from utils.config import AppSettings
+        if self.route is None:
+            self.route = AppSettings.DEFAULT_ROUTE
+        if self.incoterm is None:
+            self.incoterm = AppSettings.DEFAULT_INCOTERM
     
 
 def compute_landed_cost(order: OrderParams) -> Dict[str, Any]:

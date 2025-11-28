@@ -8,6 +8,7 @@ import os
 import json
 import re
 import logging
+import functools
 import streamlit as st
 from typing import Optional, Dict, Any
 from datetime import datetime
@@ -31,8 +32,11 @@ if not logger.handlers:
 
 
 # =============================================================================
-# API KEY MANAGEMENT
+# API KEY MANAGEMENT (with caching)
 # =============================================================================
+
+# Module-level cache for API key (cleared on each Streamlit rerun)
+_cached_api_key: Optional[str] = None
 
 def _read_raw_api_key() -> Optional[str]:
     """Read API key from environment or secrets."""
@@ -47,7 +51,8 @@ def _read_raw_api_key() -> Optional[str]:
             for key_name in ["GEMINI_API_KEY", "GOOGLE_API_KEY", "google_api_key"]:
                 if key_name in st.secrets:
                     return st.secrets[key_name]
-    except Exception:
+    except (AttributeError, KeyError, TypeError):
+        # Streamlit secrets not available or invalid format
         pass
     
     return None
@@ -61,8 +66,42 @@ def _clean_api_key(raw: str) -> str:
     return cleaned
 
 
+@functools.lru_cache(maxsize=1)
+def _get_cached_api_key() -> Optional[str]:
+    """
+    Cached version of API key retrieval.
+    Uses LRU cache to avoid repeated environment/secret lookups.
+    Cache is cleared when Streamlit reruns (new session).
+    """
+    raw = _read_raw_api_key()
+    if not raw:
+        return None
+    
+    cleaned = _clean_api_key(raw)
+    if len(cleaned) < 20:
+        return None
+    
+    return cleaned
+
+
 def get_gemini_api_key() -> str:
-    """Get cleaned API key or raise error."""
+    """
+    Get cleaned API key or raise error.
+    Uses caching to avoid repeated lookups in the same session.
+    """
+    global _cached_api_key
+    
+    # Try cached value first
+    if _cached_api_key is not None:
+        return _cached_api_key
+    
+    # Try LRU cache
+    cached = _get_cached_api_key()
+    if cached:
+        _cached_api_key = cached
+        return cached
+    
+    # Fallback to direct lookup (for error message)
     raw = _read_raw_api_key()
     if not raw:
         raise RuntimeError("❌ Gemini API key not found. Set GEMINI_API_KEY environment variable.")
@@ -71,7 +110,15 @@ def get_gemini_api_key() -> str:
     if len(cleaned) < 20:
         raise RuntimeError(f"❌ API key appears invalid. Length: {len(cleaned)}")
     
+    _cached_api_key = cleaned
     return cleaned
+
+
+def clear_api_key_cache() -> None:
+    """Clear the API key cache (useful for testing or key rotation)."""
+    global _cached_api_key
+    _cached_api_key = None
+    _get_cached_api_key.cache_clear()
 
 
 # =============================================================================
@@ -88,15 +135,31 @@ def configure_gemini() -> bool:
     
     try:
         api_key = get_gemini_api_key()
+        if not api_key:
+            raise ValueError("API key not found")
         genai.configure(api_key=api_key)
         _configured = True
         return True
-    except Exception as e:
-        # Security: Don't expose internal error details
+    except ValueError as e:
+        # Invalid API key or missing key
         import logging
         logger = logging.getLogger(__name__)
-        logger.error(f"Gemini configuration failed: {str(e)}", exc_info=True)
+        logger.error(f"Gemini configuration failed - invalid/missing API key: {str(e)}", exc_info=True)
         # Show generic error to user
+        st.error("❌ Service configuration failed. Please refresh the page or contact support.")
+        return False
+    except (TypeError, AttributeError) as e:
+        # Invalid API key format or genai module issue
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Gemini configuration failed - API key format error: {str(e)}", exc_info=True)
+        st.error("❌ Service configuration failed. Please refresh the page or contact support.")
+        return False
+    except Exception as e:
+        # Catch-all for unexpected errors
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Gemini configuration failed - unexpected error: {str(e)}", exc_info=True)
         st.error("❌ Service configuration failed. Please refresh the page or contact support.")
         return False
 
@@ -213,7 +276,10 @@ class GeminiService:
     
     def analyze_product(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Analyze a product sourcing query with MODE-SPECIFIC prompts.
+        Analyze a product sourcing query using hybrid system (rule-based + AI).
+        
+        Parses user input to extract volume, channel, target_market, and route,
+        then uses hybrid analysis system for accurate cost calculation.
         
         Args:
             input_data: Dict with query, file_bytes, file_mime_type
@@ -228,62 +294,115 @@ class GeminiService:
         if not query and not file_bytes:
             return {"success": False, "data": "Please provide a query or upload a file.", "mode": "general"}
         
-        if not self.is_configured:
-            return {"success": False, "data": "API key not configured.", "mode": "general"}
-        
         # Detect analysis mode
         mode = detect_analysis_mode(query) if query else "general"
         
         try:
-            model = self._get_model()
+            # Step 1: Extract structured data from user input using LLM
+            extracted_values = None
+            if query and self.is_configured:
+                try:
+                    from utils.extraction_prompts import (
+                        EXTRACTION_USER_PROMPT_TEMPLATE,
+                        normalize_extracted_values,
+                        validate_and_normalize_extraction
+                    )
+                    
+                    # Build extraction prompt with user message
+                    extraction_prompt = EXTRACTION_USER_PROMPT_TEMPLATE.format(user_message=query)
+                    
+                    model = self._get_model()
+                    response = model.generate_content(extraction_prompt)
+                    
+                    if response and response.text:
+                        # Use Pydantic validation
+                        extracted_dict, error = validate_and_normalize_extraction(response.text)
+                        if not error and extracted_dict:
+                            extracted_values = extracted_dict
+                            logger.info(f"Successfully extracted: {extracted_values}")
+                        elif error:
+                            # Fallback to old parsing if validation fails
+                            logger.warning(f"Extraction validation failed: {error}, using fallback parser")
+                            data, parse_error = self._parse_json_response(response.text)
+                            if not parse_error and data:
+                                extracted_values = normalize_extracted_values(data)
+                                logger.info(f"Fallback extraction successful: {extracted_values}")
+                except ImportError as e:
+                    logger.warning(f"Extraction module not available: {e}, using fallback parser")
+                except Exception as e:
+                    logger.warning(f"Extraction failed: {e}, using fallback parser", exc_info=True)
             
-            if file_bytes:
-                # Image analysis
-                prompt = build_image_analysis_prompt(query or "", mode)
-                mime_type = file_mime_type or "image/jpeg"
-                image_part = {"mime_type": mime_type, "data": file_bytes}
-                response = model.generate_content([prompt, image_part])
-                mode = "image"
+            # Step 2: Use extracted values or fallback to input parser
+            if extracted_values:
+                units = extracted_values.get("volume_units")
+                channel = extracted_values.get("channel")
+                target_market = extracted_values.get("target_market")
+                route = extracted_values.get("route")
             else:
-                # Text analysis with mode-specific prompt
-                prompt = build_analysis_prompt(query, mode)
-                response = model.generate_content(prompt)
+                # Fallback to input parser
+                from utils.input_parser import parse_input_parameters
+                parsed = parse_input_parameters(query)
+                units = parsed.get("volume_units")
+                channel = parsed.get("channel")
+                target_market = parsed.get("target_market")
+                route = parsed.get("route")
             
-            if not response or not response.text:
-                return {"success": False, "data": "Empty response from API", "mode": mode}
+            # Step 3: Parse research data from context
+            from utils.research_data import parse_research_data_from_text
+            context_query = input_data.get("context_query", "") or query
+            research_data = parse_research_data_from_text(context_query)
             
-            data, error = self._parse_json_response(response.text)
+            # Step 4: Use hybrid system with extracted values
+            result = analyze_with_hybrid_system(
+                query=query,
+                units=units,
+                route=route,
+                target_market=target_market,
+                channel=channel,
+                retail_price=None,
+                file_bytes=file_bytes,
+                research_data=research_data
+            )
             
-            if error:
-                return {"success": False, "data": error, "mode": mode}
-            
-            # Add metadata
-            data["_meta"] = {
-                "generated_at": datetime.now().isoformat(),
-                "model": self.MODEL_NAME,
-                "query": query[:100] if query else "Image analysis",
-                "analysis_mode": mode
-            }
-            
-            if "analysis_mode" not in data:
-                data["analysis_mode"] = mode
-            
-            # Log successful analysis for business intelligence
-            try:
-                from services.data_logger import log_analysis
-                log_analysis(
-                    query=query or "Image analysis",
-                    mode=mode,
-                    json_data=data
-                )
-            except Exception as log_err:
-                # Don't break main flow if logging fails
-                logger.warning(f"Logging skipped: {log_err}")
-            
-            return {"success": True, "data": data, "mode": mode}
+            if result["success"]:
+                # Convert to expected format
+                dashboard_data = result["data"]
+                
+                # Assumptions are already set by analyze_with_hybrid_system
+                # No need to update here as they're extracted from AI response
+                
+                # Log successful analysis
+                try:
+                    from services.data_logger import log_analysis
+                    log_analysis(
+                        query=query or "Image analysis",
+                        mode=mode,
+                        json_data=dashboard_data
+                    )
+                except (ImportError, OSError, ValueError) as log_err:
+                    # Don't break main flow if logging fails
+                    logger.warning(f"Logging skipped: {log_err}")
+                
+                return {"success": True, "data": dashboard_data, "mode": mode}
+            else:
+                return result
         
+        except (ConnectionError, TimeoutError) as e:
+            # Network/API connection issues
+            logger.error(f"API connection error: {e}", exc_info=True)
+            return {"success": False, "data": "Connection to AI service failed. Please check your internet connection and try again.", "mode": mode}
+        except ValueError as e:
+            # Invalid input or configuration
+            logger.error(f"Invalid input/configuration: {e}", exc_info=True)
+            return {"success": False, "data": "Invalid request. Please check your input and try again.", "mode": mode}
+        except KeyError as e:
+            # Missing required data in response
+            logger.error(f"Missing data in API response: {e}", exc_info=True)
+            return {"success": False, "data": "Incomplete response from AI service. Please try again.", "mode": mode}
         except Exception as e:
-            return {"success": False, "data": f"{type(e).__name__}: {str(e)}", "mode": mode}
+            # Catch-all for unexpected errors
+            logger.error(f"Unexpected error in analysis: {e}", exc_info=True)
+            return {"success": False, "data": f"Analysis failed: {type(e).__name__}", "mode": mode}
     
     def get_mock_analysis(self, query: str = "") -> Dict[str, Any]:
         """Return comprehensive mock data for demo/testing."""
@@ -487,12 +606,13 @@ def get_gemini_service() -> GeminiService:
 
 def analyze_with_hybrid_system(
     query: str,
-    units: int = 5000,
-    route: str = "cn_to_us_west_coast",
-    target_market: str = "USA",
-    channel: str = "Amazon FBA",
+    units: int = None,
+    route: str = None,
+    target_market: str = None,
+    channel: str = None,
     retail_price: Optional[float] = None,
-    file_bytes: Optional[bytes] = None
+    file_bytes: Optional[bytes] = None,
+    research_data: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """
     Hybrid analysis: Rule-based cost calculation + AI insights.
@@ -504,16 +624,17 @@ def analyze_with_hybrid_system(
     
     Args:
         query: User's product description
-        units: Order quantity
-        route: Shipping route
-        target_market: Destination market
-        channel: Sales channel
+        units: Order quantity (defaults to AppSettings.DEFAULT_VOLUME_UNITS)
+        route: Shipping route (defaults to AppSettings.DEFAULT_ROUTE)
+        target_market: Destination market (defaults to AppSettings.DEFAULT_TARGET_MARKET)
+        channel: Sales channel (defaults to AppSettings.DEFAULT_CHANNEL)
         retail_price: Expected retail price
         file_bytes: Optional image data
     
     Returns:
         Complete analysis result
     """
+    from utils.config import AppSettings
     from utils.cost_tables import classify_category, get_category_config
     from utils.cost_calculator import OrderParams, compute_landed_cost
     from utils.result_builder import build_nexsupply_result, convert_to_dashboard_format
@@ -523,30 +644,40 @@ def analyze_with_hybrid_system(
     category_id = classify_category(query)
     cfg = get_category_config(category_id)
     
-    # Step 2: Compute landed cost (rule-based)
+    # Step 2: Use fallback values for initial calculation (will be updated after AI extraction)
+    from utils.input_parser import parse_input_parameters
+    parsed = parse_input_parameters(query) if not (units and target_market and channel) else {}
+    
+    temp_units = units or parsed.get("volume_units", AppSettings.DEFAULT_VOLUME_UNITS)
+    temp_route = route or parsed.get("route", AppSettings.DEFAULT_ROUTE)
+    temp_target_market = target_market or parsed.get("target_market", AppSettings.DEFAULT_TARGET_MARKET)
+    temp_channel = channel or parsed.get("channel", AppSettings.DEFAULT_CHANNEL)
+    
+    # Step 3: Compute initial landed cost (rule-based) with temp values
     order = OrderParams(
         category_id=category_id,
-        units=units,
-        route=route,
-        incoterm="DDP",
+        units=temp_units,
+        route=temp_route,
+        incoterm=AppSettings.DEFAULT_INCOTERM,
         retail_price_per_unit=retail_price
     )
     landed_cost_result = compute_landed_cost(order)
     
-    # Step 3: Get AI insights (if API configured)
+    # Step 4: Get AI insights (if API configured) - AI will extract volume, channel, target_market
     ai_insights = None
     service = get_gemini_service()
     
     if service.is_configured:
         try:
-            # Build hybrid prompt
+            # Build hybrid prompt with research data
             prompt = build_hybrid_prompt(
                 user_input=query,
                 category_id=category_id,
                 category_label=cfg["label"],
                 landed_cost_json=json.dumps(landed_cost_result, indent=2),
                 image_summary="Image provided for analysis." if file_bytes else "",
-                suppliers_db_json="[]"  # Use default suppliers
+                suppliers_db_json="[]",  # Use default suppliers
+                research_data=research_data
             )
             
             model = service._get_model()
@@ -564,16 +695,52 @@ def analyze_with_hybrid_system(
                 data, error = service._parse_json_response(response.text)
                 if not error:
                     ai_insights = data
+                    
+                    # Inject research data into AI insights if provided
+                    if research_data and ai_insights:
+                        from utils.research_data import inject_research_data
+                        ai_insights = inject_research_data(ai_insights, research_data)
+                    
+                    # Extract values from AI response (priority 1: AI extraction)
+                    if ai_insights:
+                        extracted_units = ai_insights.get("volume_units")
+                        extracted_target_market = ai_insights.get("target_market")
+                        extracted_channel = ai_insights.get("channel")
+                        
+                        # Use AI-extracted values if available
+                        if extracted_units and isinstance(extracted_units, (int, float)) and extracted_units > 0:
+                            units = int(extracted_units)
+                        if extracted_target_market and extracted_target_market.strip():
+                            target_market = extracted_target_market.strip()
+                        if extracted_channel and extracted_channel.strip():
+                            channel = extracted_channel.strip()
         except Exception as e:
             logger.error(f"AI insights failed: {e}", exc_info=True)
     
-    # Step 4: Build final result
+    # Step 5: Use extracted values or fallbacks (priority: AI > input parser > defaults)
+    final_units = units or parsed.get("volume_units", AppSettings.DEFAULT_VOLUME_UNITS)
+    final_target_market = target_market or parsed.get("target_market", AppSettings.DEFAULT_TARGET_MARKET)
+    final_channel = channel or parsed.get("channel", AppSettings.DEFAULT_CHANNEL)
+    final_route = route or parsed.get("route", AppSettings.DEFAULT_ROUTE)
+    
+    # Step 6: Recalculate landed cost with correct values if they changed
+    if final_units != temp_units or final_route != temp_route:
+        order = OrderParams(
+            category_id=category_id,
+            units=final_units,
+            route=final_route,
+            incoterm=AppSettings.DEFAULT_INCOTERM,
+            retail_price_per_unit=retail_price
+        )
+        landed_cost_result = compute_landed_cost(order)
+    
+    # Step 7: Build final result with extracted values
     result = build_nexsupply_result(
         user_query=query,
-        units=units,
-        route=route,
-        target_market=target_market,
-        channel=channel,
+        units=final_units,
+        route=final_route,
+        target_market=final_target_market,
+        channel=final_channel,
         retail_price=retail_price,
         ai_insights=ai_insights
     )
