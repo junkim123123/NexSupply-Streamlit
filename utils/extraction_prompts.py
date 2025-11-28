@@ -7,6 +7,9 @@ from typing import Optional, Dict, Any
 import re
 import logging
 
+# Module-level logger for extraction operations
+logger = logging.getLogger(__name__)
+
 
 EXTRACTION_USER_PROMPT_TEMPLATE = """
 You are an AI parser that converts messy, natural-language sourcing requests
@@ -607,8 +610,6 @@ def validate_and_normalize_extraction(llm_response_str: str) -> tuple[Dict[str, 
     """
     import json
     import re
-    
-    logger = logging.getLogger(__name__)
     
     # Clean and parse JSON first
     try:
