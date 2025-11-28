@@ -12,17 +12,8 @@
         {
           "key": "Content-Type",
           "value": "application/json"
-        },
-        {
-          "key": "Access-Control-Allow-Origin",
-          "value": "*"
         }
       ]
-    }
-  ],
-  "public": [
-    {
-      "path": "/.well-known/assetlinks.json"
     }
   ]
 }
