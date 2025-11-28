@@ -2,6 +2,11 @@
 Extraction Prompts for NexSupply
 LLM-based extraction of structured data from unstructured user input.
 """
+from enum import Enum
+from typing import Optional, Dict, Any
+import re
+import logging
+
 
 EXTRACTION_USER_PROMPT_TEMPLATE = """
 You are an AI parser that converts messy, natural-language sourcing requests
