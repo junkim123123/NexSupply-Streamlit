@@ -5,6 +5,7 @@ Clean, unified input area with polished Quick Start cards
 
 import streamlit as st
 import time
+import traceback
 
 from services.gemini_service import GeminiService
 from state.session_state import get_sourcing_state
@@ -503,21 +504,43 @@ def render_home_page():
                                 st.rerun()
                             else:
                                 status.update(label="❌ Analysis failed", state="error")
-                                # Security: Don't expose internal error details
                                 error_code = "A-101"  # Generic error code
                                 from utils.config import Config
                                 contact_email = Config.get_consultation_email()
+                                
+                                # Get error details from result if available
+                                error_msg = result.get("error", "Unknown error")
+                                error_details = result.get("error_details", "")
+                                
+                                # Display error with traceback
                                 st.error(f"⚠️ **Analysis Failed. (Error Code: {error_code})**\n\nWe apologize for the issue. Please **refresh the page** or email us the details directly at **{contact_email}**")
+                                
+                                # Print full traceback to terminal
+                                print(f"\n{'='*80}")
+                                print(f"ERROR CODE: {error_code}")
+                                print(f"{'='*80}")
+                                print(f"Error Message: {error_msg}")
+                                if error_details:
+                                    print(f"Error Details: {error_details}")
+                                print(f"Full Result: {result}")
+                                print(f"{'='*80}\n")
+                                
                                 st.session_state.last_error = error_code
                         
                         except Exception as e:
                             status.update(label="❌ Error occurred", state="error")
-                            # Security: Don't expose exception details
                             error_code = "A-102"  # Generic error code
                             from utils.config import Config
                             contact_email = Config.get_consultation_email()
                             st.error(f"⚠️ **Analysis Failed. (Error Code: {error_code})**\n\nWe apologize for the issue. Please **refresh the page** or email us the details directly at **{contact_email}**")
                             st.session_state.last_error = error_code
+                            
+                            # Print full traceback to terminal
+                            print(f"\n{'='*80}")
+                            print(f"ERROR CODE: {error_code}")
+                            print(f"{'='*80}")
+                            traceback.print_exc()
+                            print(f"{'='*80}\n")
                             
                             # Log error internally (not shown to user)
                             import logging
