@@ -19,10 +19,10 @@ def test_landed_cost_calculation_basic():
     
     # Assertions
     assert result is not None
-    assert "cost_per_unit_usd" in result
+    assert "landed_cost_per_unit_usd" in result
     assert "total_landed_cost_usd" in result
-    assert "cost_components" in result
-    assert result["cost_per_unit_usd"] > 0
+    assert "components_usd" in result
+    assert result["landed_cost_per_unit_usd"] > 0
     assert result["total_landed_cost_usd"] > 0
 
 
@@ -58,10 +58,13 @@ def test_landed_cost_components():
     )
     result = compute_landed_cost(order)
     
-    components = result.get("cost_components", {})
+    components = result.get("components_usd", {})
     
     # Check for key components
-    assert "fob_price_usd" in components or "product_cost_usd" in components
+    assert "product" in components
+    assert "shipping" in components
+    assert "handling" in components
+    assert "duty_and_tax" in components
     assert "total_landed_cost_usd" in result
 
 

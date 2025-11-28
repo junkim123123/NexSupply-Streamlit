@@ -9,7 +9,7 @@ Architecture:
 - This module merges both into final result JSON
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any, Optional, List
 import uuid
 
@@ -26,7 +26,7 @@ from utils.config import Config
 
 def generate_analysis_id() -> str:
     """Generate unique analysis ID."""
-    timestamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     short_uuid = str(uuid.uuid4())[:8]
     return f"nex-{timestamp}-{short_uuid}"
 
@@ -92,7 +92,7 @@ def build_nexsupply_result(
     # ===========================================
     meta = {
         "analysis_id": generate_analysis_id(),
-        "timestamp_utc": datetime.utcnow().isoformat() + "Z",
+        "timestamp_utc": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
         "product_raw_input": user_query,
         "product_name": ai_insights.get("product_name", f"{cfg['label']} product"),
         "parsed_category_id": category_id,

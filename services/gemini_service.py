@@ -735,24 +735,36 @@ def analyze_with_hybrid_system(
         landed_cost_result = compute_landed_cost(order)
     
     # Step 7: Build final result with extracted values
-    result = build_nexsupply_result(
-        user_query=query,
-        units=final_units,
-        route=final_route,
-        target_market=final_target_market,
-        channel=final_channel,
-        retail_price=retail_price,
-        ai_insights=ai_insights
-    )
-    
-    # Step 5: Convert to dashboard format for backward compatibility
-    dashboard_data = convert_to_dashboard_format(result)
-    
-    return {
-        "success": True,
-        "mode": "hybrid",
-        "data": dashboard_data,
-        "full_result": result,
-        "calculation_source": "rule_based",
-        "insight_source": "ai" if ai_insights else "default"
-    }
+    try:
+        result = build_nexsupply_result(
+            user_query=query,
+            units=final_units,
+            route=final_route,
+            target_market=final_target_market,
+            channel=final_channel,
+            retail_price=retail_price,
+            ai_insights=ai_insights
+        )
+        
+        # Step 5: Convert to dashboard format for backward compatibility
+        dashboard_data = convert_to_dashboard_format(result)
+        
+        return {
+            "success": True,
+            "mode": "hybrid",
+            "data": dashboard_data,
+            "full_result": result,
+            "calculation_source": "rule_based",
+            "insight_source": "ai" if ai_insights else "default"
+        }
+    except Exception as e:
+        logger.error(f"Error building result: {e}", exc_info=True)
+        import traceback
+        traceback.print_exc()
+        return {
+            "success": False,
+            "data": f"Error building analysis result: {str(e)}",
+            "mode": "hybrid",
+            "error": str(e),
+            "error_type": type(e).__name__
+        }

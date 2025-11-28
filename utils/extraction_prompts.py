@@ -46,7 +46,7 @@ Output:
       "Other"
     ]
   - "target_market_raw": original user text for target market, or null
-  - "price_range": {"min": number or null, "max": number or null, "currency": "USD" | "KRW" | null} or null
+  - "price_range": {{"min": number or null, "max": number or null, "currency": "USD" | "KRW" | null}} or null
   - "price_range_raw": original user text for price, or null
   - "delivery_timeline": one of [
       "Urgent (under 1 week)",

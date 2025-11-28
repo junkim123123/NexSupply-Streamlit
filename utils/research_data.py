@@ -47,15 +47,15 @@ def parse_research_data_from_text(text: str) -> Optional[Dict[str, Any]]:
         pass
     
     # Parse Korean key-value format
-    korean_patterns = {
-        r'수요[:\s]+(high|medium|low|높음|중간|낮음)', 'demand_level',
-        r'경쟁[:\s]+(high|medium|low|높음|중간|낮음)', 'competition_level',
-        r'시장\s*규모[:\s]+(\$?[\d.]+[MBK]?)', 'market_size_usd',
-        r'주요\s*경쟁자[:\s]+(\d+)', 'competitor_count',
-        r'마진[:\s]+(\d+)[-~](\d+)%', 'margin_range',
-    }
+    korean_patterns = [
+        (r'수요[:\s]+(high|medium|low|높음|중간|낮음)', 'demand_level'),
+        (r'경쟁[:\s]+(high|medium|low|높음|중간|낮음)', 'competition_level'),
+        (r'시장\s*규모[:\s]+(\$?[\d.]+[MBK]?)', 'market_size_usd'),
+        (r'주요\s*경쟁자[:\s]+(\d+)', 'competitor_count'),
+        (r'마진[:\s]+(\d+)[-~](\d+)%', 'margin_range'),
+    ]
     
-    for pattern, key in korean_patterns.items():
+    for pattern, key in korean_patterns:
         match = re.search(pattern, text_lower, re.IGNORECASE)
         if match:
             if key == 'demand_level':
@@ -72,15 +72,15 @@ def parse_research_data_from_text(text: str) -> Optional[Dict[str, Any]]:
                 research_data['margin_range_percent'] = [int(match.group(1)), int(match.group(2))]
     
     # Parse English key-value format
-    english_patterns = {
-        r'demand[:\s]+(high|medium|low|medium-high)', 'demand_level',
-        r'competition[:\s]+(high|medium|low)', 'competition_level',
-        r'market\s*size[:\s]+(\$?[\d.]+[MBK]?)', 'market_size_usd',
-        r'competitor[s]?[:\s]+(\d+)', 'competitor_count',
-        r'margin[:\s]+(\d+)[-~](\d+)%', 'margin_range',
-    }
+    english_patterns = [
+        (r'demand[:\s]+(high|medium|low|medium-high)', 'demand_level'),
+        (r'competition[:\s]+(high|medium|low)', 'competition_level'),
+        (r'market\s*size[:\s]+(\$?[\d.]+[MBK]?)', 'market_size_usd'),
+        (r'competitor[s]?[:\s]+(\d+)', 'competitor_count'),
+        (r'margin[:\s]+(\d+)[-~](\d+)%', 'margin_range'),
+    ]
     
-    for pattern, key in english_patterns.items():
+    for pattern, key in english_patterns:
         match = re.search(pattern, text_lower, re.IGNORECASE)
         if match:
             if key == 'demand_level':

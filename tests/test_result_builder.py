@@ -12,8 +12,8 @@ def test_build_nexsupply_result_basic():
     """Test basic result building."""
     result = build_nexsupply_result("test product query")
     
-    # Check structure
-    assert "product_info" in result
+    # Check structure (build_nexsupply_result returns new format)
+    assert "meta" in result
     assert "landed_cost" in result
     assert "market_snapshot" in result
     assert "assumptions" in result
@@ -54,10 +54,11 @@ def test_build_nexsupply_result_has_landed_cost():
     result = build_nexsupply_result("test product")
     
     landed_cost = result.get("landed_cost", {})
+    totals = landed_cost.get("totals", {})
     
-    assert "cost_per_unit_usd" in landed_cost
-    assert "total_landed_cost_usd" in landed_cost
-    assert landed_cost["cost_per_unit_usd"] > 0
+    assert "landed_cost_per_unit_usd" in totals
+    assert "total_landed_cost_usd" in totals
+    assert totals["landed_cost_per_unit_usd"] > 0
 
 
 
