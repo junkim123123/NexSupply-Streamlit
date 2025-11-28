@@ -225,3 +225,5 @@ bubblewrap build
 - [ ] Google Play Console에 앱 정보 입력
 - [ ] App Bundle 업로드 및 제출
 
+
+

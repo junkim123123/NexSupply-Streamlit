@@ -42,3 +42,5 @@ def add_pwa_meta_tags():
     """
     st.markdown(pwa_meta, unsafe_allow_html=True)
 
+
+

@@ -273,3 +273,5 @@ cp nexsupply-twa/assetlinks.json static/.well-known/
 
 **다음 단계:** Day 4에서 Bubblewrap으로 TWA를 빌드한 후, 생성된 `assetlinks.json` 파일을 Vercel에 배포하세요.
 
+
+

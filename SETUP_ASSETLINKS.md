@@ -235,3 +235,5 @@ adb shell pm get-app-links com.nexsupply.app
 
 **다음 단계:** Day 4에서 Bubblewrap으로 TWA를 빌드한 후, 생성된 `assetlinks.json`을 이 저장소에 업데이트하세요.
 
+
+

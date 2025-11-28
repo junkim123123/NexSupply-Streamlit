@@ -1,0 +1,11 @@
+Y
+Y
+NexSupply
+com.nexsupply.app
+app.nexsupply.app
+Y
+password123
+password123
+
+
+
