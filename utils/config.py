@@ -4,6 +4,7 @@ Uses environment variables and Streamlit secrets.
 """
 
 import os
+import functools
 from typing import Optional
 from dotenv import load_dotenv
 
@@ -20,11 +21,14 @@ class Config:
     # Gemini API Configuration
     GEMINI_TIMEOUT = 60
     
+    _cached_gemini_key: Optional[str] = None
+    
     @staticmethod
-    def get_gemini_api_key() -> Optional[str]:
+    @functools.lru_cache(maxsize=1)
+    def _get_gemini_key_cached() -> Optional[str]:
         """
-        Get Gemini API key from environment or Streamlit secrets.
-        Priority: Environment variable > Streamlit secrets
+        Cached lookup for Gemini API key.
+        Uses LRU cache to avoid repeated environment/secret lookups.
         """
         # Try environment variable first
         api_key = os.getenv("GEMINI_API_KEY")
@@ -41,6 +45,31 @@ class Config:
             pass
         
         return None
+    
+    @staticmethod
+    def get_gemini_api_key() -> Optional[str]:
+        """
+        Get Gemini API key from environment or Streamlit secrets.
+        Priority: Environment variable > Streamlit secrets
+        Uses caching to avoid repeated lookups in the same session.
+        """
+        # Try module-level cache first
+        if Config._cached_gemini_key is not None:
+            return Config._cached_gemini_key
+        
+        # Try LRU cache
+        cached = Config._get_gemini_key_cached()
+        if cached:
+            Config._cached_gemini_key = cached
+            return cached
+        
+        return None
+    
+    @staticmethod
+    def clear_gemini_key_cache() -> None:
+        """Clear the Gemini API key cache (useful for testing or key rotation)."""
+        Config._cached_gemini_key = None
+        Config._get_gemini_key_cached.cache_clear()
     
     @staticmethod
     def get_database_url() -> Optional[str]:
@@ -112,4 +141,39 @@ class AppSettings:
     # UI Settings
     PAGE_ICON = "🏭"
     LAYOUT = "wide"
+    
+    # =============================================================================
+    # DEFAULT ANALYSIS ASSUMPTIONS
+    # =============================================================================
+    
+    # Default order parameters
+    DEFAULT_VOLUME_UNITS = 5000
+    DEFAULT_TARGET_MARKET = "USA"
+    DEFAULT_CHANNEL = "Amazon FBA"
+    DEFAULT_INCOTERM = "DDP"
+    DEFAULT_CURRENCY = "USD"
+    DEFAULT_ROUTE = "cn_to_us_west_coast"
+    DEFAULT_DESTINATION = "Los Angeles"
+    
+    # Route display mappings
+    ROUTE_DISPLAY_MAP = {
+        "cn_to_us_west_coast": "China → US West Coast",
+        "cn_to_us_east_coast": "China → US East Coast",
+        "cn_to_eu": "China → EU"
+    }
+    
+    # Default incoterm display format
+    @classmethod
+    def get_incoterm_display(cls, incoterm: str = None, destination: str = None) -> str:
+        """Get formatted incoterm display string."""
+        incoterm = incoterm or cls.DEFAULT_INCOTERM
+        destination = destination or cls.DEFAULT_DESTINATION
+        return f"{incoterm} to {destination}"
+    
+    # Default route display
+    @classmethod
+    def get_route_display(cls, route: str = None) -> str:
+        """Get formatted route display string."""
+        route = route or cls.DEFAULT_ROUTE
+        return cls.ROUTE_DISPLAY_MAP.get(route, route.replace("_", " ").title())
 

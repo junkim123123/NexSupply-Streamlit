@@ -464,6 +464,37 @@ def render_header_with_assumptions(data: Dict, query: str) -> None:
     col1, col2 = st.columns([3, 1])
     
     with col1:
+        # Import AppSettings for defaults
+        from utils.config import AppSettings
+        
+        # Extract assumptions from analysis data (try both 'assumptions' and 'assumptions_display')
+        assumptions = data.get("assumptions") or data.get("assumptions_display", {})
+        target_market = assumptions.get("target_market", AppSettings.DEFAULT_TARGET_MARKET)
+        channel = assumptions.get("channel", AppSettings.DEFAULT_CHANNEL)
+        volume_units = assumptions.get("volume_units", AppSettings.DEFAULT_VOLUME_UNITS)
+        incoterm = assumptions.get("incoterm", AppSettings.DEFAULT_INCOTERM)
+        route_display = assumptions.get("route_display", AppSettings.get_route_display())
+        currency = assumptions.get("currency", AppSettings.DEFAULT_CURRENCY)
+        
+        # Check if channel is default (add indicator only if it's actually default)
+        if channel == AppSettings.DEFAULT_CHANNEL and not assumptions.get("channel"):
+            channel_display = f"{channel} (default)"
+        else:
+            channel_display = channel
+        
+        # Format volume with commas
+        volume_display = f"{volume_units:,} units" if volume_units else f"{AppSettings.DEFAULT_VOLUME_UNITS:,} units"
+        
+        # Format incoterm with destination
+        if incoterm == AppSettings.DEFAULT_INCOTERM:
+            incoterm_display = AppSettings.get_incoterm_display(incoterm, AppSettings.DEFAULT_DESTINATION)
+            # Try to extract destination from route_display if available
+            if "→" in route_display:
+                destination = route_display.split("→")[-1].strip()
+                incoterm_display = AppSettings.get_incoterm_display(incoterm, destination)
+        else:
+            incoterm_display = incoterm
+        
         st.markdown(f"""
             <div class="assumptions-card">
                 <div style="font-weight: 600; color: #374151; margin-bottom: 12px; font-size: 0.9rem;">
@@ -471,23 +502,23 @@ def render_header_with_assumptions(data: Dict, query: str) -> None:
                 </div>
                 <div class="assumption-item">
                     <span class="assumption-label">Target market</span>
-                    <span class="assumption-value">USA</span>
+                    <span class="assumption-value">{target_market}</span>
                 </div>
                 <div class="assumption-item">
                     <span class="assumption-label">Channel</span>
-                    <span class="assumption-value">Amazon FBA (default)</span>
+                    <span class="assumption-value">{channel_display}</span>
                 </div>
                 <div class="assumption-item">
                     <span class="assumption-label">Volume</span>
-                    <span class="assumption-value">5,000 units</span>
+                    <span class="assumption-value">{volume_display}</span>
                 </div>
                 <div class="assumption-item">
                     <span class="assumption-label">Incoterm</span>
-                    <span class="assumption-value">DDP to Los Angeles</span>
+                    <span class="assumption-value">{incoterm_display}</span>
                 </div>
                 <div class="assumption-item" style="border-bottom: none;">
                     <span class="assumption-label">Currency</span>
-                    <span class="assumption-value">USD</span>
+                    <span class="assumption-value">{currency}</span>
                 </div>
             </div>
         """, unsafe_allow_html=True)
@@ -619,9 +650,23 @@ def render_market_snapshot(data: Dict) -> None:
     
     # Total Lead Time (NEW - 4th card)
     with col4:
-        total_days = lead_time.get("total_days", 65)
+        # Ensure total_days is an integer
+        total_days_raw = lead_time.get("total_days", 65)
+        if isinstance(total_days_raw, str):
+            # Parse "45-60" format
+            if "–" in total_days_raw or "-" in total_days_raw:
+                total_days = int(total_days_raw.split("–")[0].split("-")[0].strip())
+            else:
+                try:
+                    total_days = int(total_days_raw)
+                except ValueError:
+                    total_days = 65
+        else:
+            total_days = int(total_days_raw)
+        
+        # Calculate weeks consistently with lead_time_section
         total_weeks = total_days // 7
-        total_weeks_high = (total_days + 10) // 7
+        total_weeks_high = (total_days + 14) // 7  # Match lead_time_section calculation
         
         st.markdown(f"""
             <div class="metric-card">
@@ -650,14 +695,25 @@ def render_lead_time_section(data: Dict) -> None:
     
     # Get lead time data from result or use defaults
     lead_time = data.get("lead_time", {})
-    production_days = lead_time.get("production_days", 25)
-    shipping_days = lead_time.get("shipping_days", 28)
-    customs_days = lead_time.get("customs_days", 5)
-    buffer_days = lead_time.get("buffer_days", 7)
     
+    # Ensure all values are integers
+    def safe_int(value, default):
+        if isinstance(value, str):
+            try:
+                return int(value.split("–")[0].split("-")[0].strip())
+            except (ValueError, AttributeError):
+                return default
+        return int(value) if value else default
+    
+    production_days = safe_int(lead_time.get("production_days", 30), 30)
+    shipping_days = safe_int(lead_time.get("shipping_days", 28), 28)
+    customs_days = safe_int(lead_time.get("customs_days", 5), 5)
+    buffer_days = safe_int(lead_time.get("buffer_days", 7), 7)
+    
+    # Calculate total consistently
     total_days = production_days + shipping_days + customs_days + buffer_days
     total_weeks = total_days // 7
-    total_weeks_high = (total_days + 14) // 7  # Upper bound
+    total_weeks_high = (total_days + 14) // 7  # Upper bound (consistent with Market Snapshot)
     
     st.markdown(f"""
         <div class="section-header">
@@ -1154,7 +1210,8 @@ def render_next_actions_and_cta(data: Dict) -> None:
         product_info = data.get("product_info", {})
         product_name = product_info.get("name", query.split("\n")[0] if query else "Product Inquiry")
         landed_cost_data = data.get("landed_cost", {})
-        quantity_basis = landed_cost_data.get("quantity_basis", 5000)
+        from utils.config import AppSettings
+        quantity_basis = landed_cost_data.get("quantity_basis", AppSettings.DEFAULT_VOLUME_UNITS)
         
         # Pre-fill message with analysis summary
         default_message = f"Product: {product_name}\nVolume: {quantity_basis:,} units\nLanded cost: ${landed_cost_data.get('cost_per_unit_usd', 0):.2f}/unit\n\nPlease help me get real quotes and factory verification."
@@ -1178,8 +1235,17 @@ def render_next_actions_and_cta(data: Dict) -> None:
         
         # Send button (MAIN ACTION - only real CTA) - STRONGER LANGUAGE
         if st.button("🔒 Secure Real Quotes & Factory Visits – Start Now", type="primary", use_container_width=True):
-            if not user_email or "@" not in user_email:
-                st.error("Please enter a valid email address")
+            # Validate inputs using centralized validation
+            from utils.validation import validate_consultation_input
+            
+            is_valid, error_msg = validate_consultation_input(
+                email=user_email,
+                name="",
+                message=user_message if user_message else None
+            )
+            
+            if not is_valid:
+                st.error(f"❌ {error_msg}")
             else:
                 from services.email_service import request_consultation
                 from state.session_state import get_sourcing_state

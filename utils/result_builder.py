@@ -33,10 +33,10 @@ def generate_analysis_id() -> str:
 
 def build_nexsupply_result(
     user_query: str,
-    units: int = 5000,
-    route: str = "cn_to_us_west_coast",
-    target_market: str = "USA",
-    channel: str = "Amazon FBA",
+    units: int = None,
+    route: str = None,
+    target_market: str = None,
+    channel: str = None,
     retail_price: Optional[float] = None,
     ai_insights: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
@@ -45,16 +45,23 @@ def build_nexsupply_result(
     
     Args:
         user_query: Original user input
-        units: Order quantity
-        route: Shipping route
-        target_market: Destination market
-        channel: Sales channel
+        units: Order quantity (defaults to AppSettings.DEFAULT_VOLUME_UNITS)
+        route: Shipping route (defaults to AppSettings.DEFAULT_ROUTE)
+        target_market: Destination market (defaults to AppSettings.DEFAULT_TARGET_MARKET)
+        channel: Sales channel (defaults to AppSettings.DEFAULT_CHANNEL)
         retail_price: Expected retail price for margin calculation
         ai_insights: AI-generated qualitative insights (optional)
     
     Returns:
         Complete result dictionary matching the NexSupply JSON schema
     """
+    from utils.config import AppSettings
+    
+    # Use defaults from AppSettings if not provided
+    units = units or AppSettings.DEFAULT_VOLUME_UNITS
+    route = route or AppSettings.DEFAULT_ROUTE
+    target_market = target_market or AppSettings.DEFAULT_TARGET_MARKET
+    channel = channel or AppSettings.DEFAULT_CHANNEL
     
     # Default AI insights if not provided
     if ai_insights is None:
@@ -73,7 +80,7 @@ def build_nexsupply_result(
         category_id=category_id,
         units=units,
         route=route,
-        incoterm="DDP",
+        incoterm=AppSettings.DEFAULT_INCOTERM,
         retail_price_per_unit=retail_price
     )
     
@@ -111,10 +118,10 @@ def build_nexsupply_result(
         "target_market": target_market,
         "channel": channel,
         "volume_units": units,
-        "incoterm": "DDP",
+        "incoterm": AppSettings.DEFAULT_INCOTERM,
         "route": route,
-        "route_display": route.replace("cn_to_", "China → ").replace("_", " ").title(),
-        "currency": "USD",
+        "route_display": AppSettings.get_route_display(route),
+        "currency": AppSettings.DEFAULT_CURRENCY,
         "reliability_level": reliability_level,
         "reliability_score": reliability_score,
         "reliability_range": f"~{int(reliability_score*100-10)}–{int(reliability_score*100+5)}%",
@@ -425,6 +432,52 @@ def get_default_suppliers(cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
 # CONVERSION HELPERS FOR EXISTING DASHBOARD
 # =============================================================================
 
+def _calculate_lead_time(result: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Calculate consistent lead time from result data.
+    Ensures Market Snapshot and Lead Time section show the same values.
+    
+    Returns:
+        Dict with production_days, shipping_days, customs_days, buffer_days, total_days
+    """
+    # Try to get from suppliers first
+    suppliers = result.get("suppliers", [])
+    if suppliers:
+        lead_time_str = suppliers[0].get("lead_time_days", "25-35")
+        # Parse "25-35" or "25–35" format
+        if isinstance(lead_time_str, str):
+            if "–" in lead_time_str:
+                production_days = int(lead_time_str.split("–")[0].strip())
+            elif "-" in lead_time_str:
+                production_days = int(lead_time_str.split("-")[0].strip())
+            else:
+                try:
+                    production_days = int(lead_time_str)
+                except ValueError:
+                    production_days = 30
+        else:
+            production_days = int(lead_time_str)
+    else:
+        production_days = 30
+    
+    # Standard shipping and customs times
+    shipping_days = 28  # Sea freight: 18-25 days average, use 28 for buffer
+    customs_days = 5    # Customs clearance
+    buffer_days = 7     # Port congestion and safety buffer
+    
+    # Calculate total
+    total_days = production_days + shipping_days + customs_days + buffer_days
+    
+    return {
+        "production_days": production_days,
+        "shipping_days": shipping_days,
+        "customs_days": customs_days,
+        "buffer_days": buffer_days,
+        "total_days": total_days,
+        "safety_stock_days": 14
+    }
+
+
 def convert_to_dashboard_format(result: Dict[str, Any]) -> Dict[str, Any]:
     """
     Convert the new result format to match existing dashboard expectations.
@@ -481,16 +534,12 @@ def convert_to_dashboard_format(result: Dict[str, Any]) -> Dict[str, Any]:
             for s in result["suppliers"]
         ],
         "risk_analysis": result["risk_overview"],
-        "lead_time": {
-            "production_days": result["suppliers"][0].get("lead_time_days", "25-35").split("–")[0] if result["suppliers"] else "25",
-            "shipping_days": "18-25",
-            "total_days": "45-60",
-            "safety_stock_days": 14
-        },
+        "lead_time": _calculate_lead_time(result),
         # New fields for enhanced transparency
         "calculation_method": result["meta"]["calculation_method"],
         "cost_accuracy": result["meta"]["cost_accuracy"],
-        "assumptions_display": result["assumptions"],
+        "assumptions": result["assumptions"],  # Use 'assumptions' key for consistency
+        "assumptions_display": result["assumptions"],  # Keep for backward compatibility
         "sensitivity": lc.get("sensitivity", []),
         "consulting_offer": result["consulting_offer"]
     }

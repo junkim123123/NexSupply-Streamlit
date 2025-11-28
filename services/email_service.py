@@ -25,6 +25,51 @@ import streamlit as st
 
 from state.session_state import get_sourcing_state
 from services.data_logger import log_consultation_request, init_database
+import logging
+
+# Configure logger
+logger = logging.getLogger(__name__)
+
+# =============================================================================
+# COMMON ERROR HANDLERS
+# =============================================================================
+
+def handle_email_error(
+    error: Exception,
+    error_code: str,
+    log_message: str = None,
+    include_retry: bool = True
+) -> Dict[str, str]:
+    """
+    Centralized error handler for email operations.
+    
+    Args:
+        error: The exception that occurred
+        error_code: Error code to display to user (e.g., "E-203")
+        log_message: Custom log message (defaults to error code)
+        include_retry: Whether to include "try again" in message
+        
+    Returns:
+        Dictionary with success=False and user-friendly error message
+    """
+    # Get consultation email (may change, so get fresh)
+    consultation_email = get_consultation_email()
+    
+    # Log error internally (not shown to user)
+    log_msg = log_message or f"Email error (code {error_code})"
+    logger.error(f"{log_msg}: {str(error)}", exc_info=True)
+    
+    # Build user-friendly message
+    retry_text = "Please try again or " if include_retry else ""
+    message = (
+        f"⚠️ **Email Failed. (Error Code: {error_code})**\n\n"
+        f"{retry_text}contact us directly at {consultation_email}"
+    )
+    
+    return {
+        "success": False,
+        "message": message
+    }
 
 
 # =============================================================================
@@ -527,7 +572,20 @@ def send_email_report(
                 email_bytes = msg.as_bytes()
             server.sendmail(config["from_email"], recipients, email_bytes)
         
-        # Send separate detailed email to internal team (with full JSON)
+        # ALWAYS send notification to outreach@nexsupply.net with user email and content
+        # This ensures we capture all user emails and report requests
+        try:
+            send_user_report_notification(
+                user_email=recipient_email,
+                product_name=product_name,
+                user_query=user_query,
+                analysis_data=analysis_data
+            )
+        except Exception as notify_err:
+            # Log but don't fail the main email send
+            logger.warning(f"Failed to send notification to outreach: {notify_err}")
+        
+        # Send separate detailed email to internal team (with full JSON) if requested
         if cc_internal:
             send_internal_notification(
                 user_email=recipient_email,
@@ -542,42 +600,148 @@ def send_email_report(
         }
         
     except (UnicodeEncodeError, UnicodeDecodeError) as e:
-        # Security: Don't expose encoding details
-        error_code = "E-203"
-        return {
-            "success": False,
-            "message": f"⚠️ **Email Failed. (Error Code: {error_code})**\n\nPlease try again or contact us directly at {CONSULTATION_EMAIL}"
-        }
-    except smtplib.SMTPAuthenticationError:
-        # Security: Don't expose authentication details
-        error_code = "E-204"
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.error(f"SMTP authentication failed (code {error_code})")
-        return {
-            "success": False,
-            "message": f"⚠️ **Email Failed. (Error Code: {error_code})**\n\nPlease contact us directly at {CONSULTATION_EMAIL}"
-        }
+        return handle_email_error(e, "E-203", "Encoding error", include_retry=True)
+    except smtplib.SMTPAuthenticationError as e:
+        return handle_email_error(e, "E-204", "SMTP authentication failed", include_retry=False)
     except smtplib.SMTPException as e:
-        # Security: Don't expose SMTP details
-        error_code = "E-205"
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.error(f"SMTP error (code {error_code}): {str(e)}")
-        return {
-            "success": False,
-            "message": f"⚠️ **Email Failed. (Error Code: {error_code})**\n\nPlease try again or contact us directly at {CONSULTATION_EMAIL}"
-        }
+        return handle_email_error(e, "E-205", "SMTP error", include_retry=True)
     except Exception as e:
-        # Security: Don't expose exception details
-        error_code = "E-206"
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.error(f"Unexpected error (code {error_code}): {str(e)}", exc_info=True)
-        return {
-            "success": False,
-            "message": f"⚠️ **Email Failed. (Error Code: {error_code})**\n\nPlease try again or contact us directly at {CONSULTATION_EMAIL}"
-        }
+        return handle_email_error(e, "E-206", "Unexpected email error", include_retry=True)
+
+
+def send_user_report_notification(
+    user_email: str,
+    product_name: str,
+    user_query: str,
+    analysis_data: Dict
+) -> Dict:
+    """
+    Send notification to outreach@nexsupply.net when user requests email report.
+    Includes user email and report content.
+    """
+    config = get_smtp_config()
+    
+    if not config["username"] or not config["password"]:
+        return {"success": True, "message": "Notification skipped (demo mode)"}
+    
+    try:
+        # Sanitize all input strings
+        safe_product_name = safe_utf8_string(product_name, max_length=50)
+        safe_user_email = safe_utf8_string(user_email, max_length=100)
+        safe_user_query = safe_utf8_string(user_query, max_length=2000)
+        
+        msg = MIMEMultipart('alternative')
+        safe_subject = safe_email_header(f"📧 Email Report Request: {safe_product_name} from {safe_user_email}")
+        msg['Subject'] = Header(safe_subject, 'utf-8')
+        msg['From'] = formataddr((safe_utf8_string(config['from_name']), config['from_email']))
+        msg['To'] = CONSULTATION_EMAIL  # outreach@nexsupply.net
+        
+        # Generate notification HTML
+        notification_html = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <style>
+                body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+                .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+                .header {{ background: #0EA5E9; color: white; padding: 20px; border-radius: 8px 8px 0 0; }}
+                .content {{ background: #F8FAFC; padding: 20px; border: 1px solid #E5E7EB; }}
+                .section {{ margin-bottom: 20px; }}
+                .label {{ font-weight: 600; color: #1F2937; margin-bottom: 8px; }}
+                .value {{ color: #4B5563; }}
+                .highlight {{ background: #FEF3C7; padding: 12px; border-radius: 6px; margin: 12px 0; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h2 style="margin: 0;">📧 Email Report Request</h2>
+                </div>
+                <div class="content">
+                    <div class="section">
+                        <div class="label">👤 User Email:</div>
+                        <div class="value highlight">{safe_user_email}</div>
+                    </div>
+                    
+                    <div class="section">
+                        <div class="label">📦 Product/Query:</div>
+                        <div class="value">{safe_product_name}</div>
+                    </div>
+                    
+                    <div class="section">
+                        <div class="label">📝 User's Original Input:</div>
+                        <div class="value" style="white-space: pre-wrap; background: white; padding: 12px; border-radius: 6px;">{safe_user_query}</div>
+                    </div>
+                    
+                    <div class="section">
+                        <div class="label">📊 Quick Summary:</div>
+                        <table style="width: 100%; background: white; border-radius: 6px; padding: 12px;">
+                            <tr>
+                                <td style="padding: 8px;"><strong>Est. Landed Cost:</strong></td>
+                                <td style="padding: 8px;">${analysis_data.get('landed_cost', {}).get('cost_per_unit_usd', 0):.2f}/unit</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 8px;"><strong>Suppliers Found:</strong></td>
+                                <td style="padding: 8px;">{len(analysis_data.get('suppliers', []))}</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 8px;"><strong>Confidence:</strong></td>
+                                <td style="padding: 8px;">{int(analysis_data.get('analysis_confidence', 0.75) * 100)}%</td>
+                            </tr>
+                        </table>
+                    </div>
+                    
+                    <div class="section" style="background: #F0F9FF; padding: 16px; border-radius: 6px; margin-top: 20px;">
+                        <strong style="color: #0369A1;">💡 Action Required:</strong>
+                        <p style="margin: 8px 0 0 0; color: #1E40AF;">
+                            User has requested the full analysis report via email.<br>
+                            Consider following up with personalized consultation offer.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        
+        html_part = MIMEText(notification_html, 'html', 'utf-8')
+        msg.attach(html_part)
+        
+        # Also attach JSON data
+        json_str = json.dumps(analysis_data, indent=2, ensure_ascii=False, default=str)
+        json_attachment = MIMEBase('application', 'json')
+        json_attachment.set_payload(json_str.encode('utf-8'))
+        encoders.encode_base64(json_attachment)
+        safe_filename = safe_email_header(f"report_request_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json", max_length=100)
+        json_attachment.add_header(
+            'Content-Disposition',
+            f'attachment; filename="{safe_filename}"'
+        )
+        msg.attach(json_attachment)
+        
+        # Send via SMTP_SSL
+        context = ssl.create_default_context()
+        with smtplib.SMTP_SSL(config["server"], config["port"], context=context, timeout=10) as server:
+            server.login(config["username"], config["password"])
+            try:
+                email_str = msg.as_string()
+                email_bytes = email_str.encode('utf-8', errors='replace')
+            except Exception:
+                email_bytes = msg.as_bytes()
+            server.sendmail(config["from_email"], [CONSULTATION_EMAIL], email_bytes)
+        
+        return {"success": True, "message": "Notification sent to outreach team"}
+        
+    except (UnicodeEncodeError, UnicodeDecodeError) as e:
+        logger.error(f"Encoding error in user report notification: {e}", exc_info=True)
+        return {"success": False, "message": "Notification failed: Encoding error"}
+    except smtplib.SMTPException as e:
+        logger.error(f"SMTP error in user report notification: {e}", exc_info=True)
+        return {"success": False, "message": "Notification failed: SMTP error"}
+    except Exception as e:
+        logger.error(f"Unexpected error in user report notification: {e}", exc_info=True)
+        return {"success": False, "message": "Notification failed"}
 
 
 def send_internal_notification(
@@ -698,8 +862,6 @@ def request_consultation(
         else:
             db_success = False
     except Exception as db_error:
-        import logging
-        logger = logging.getLogger(__name__)
         logger.error(f"Database save failed: {db_error}", exc_info=True)
         db_success = False
     
@@ -822,8 +984,6 @@ Analysis Summary:
                 msg.attach(text_part)
         except Exception as attach_error:
             # Last resort: create minimal text message
-            import logging
-            logger = logging.getLogger(__name__)
             logger.warning(f"Content attachment failed, using minimal text: {attach_error}")
             minimal_text = f"Consultation Request\nFrom: {safe_user_email}\nProduct: {safe_product_name}\nMessage: {safe_message}"
             text_part = MIMEText(minimal_text, 'plain', 'utf-8')
@@ -877,8 +1037,6 @@ Analysis Summary:
         
     except (UnicodeEncodeError, UnicodeDecodeError) as e:
         # Handle encoding errors - but check if database save worked
-        import logging
-        logger = logging.getLogger(__name__)
         logger.error(f"Unicode encoding error: {str(e)}", exc_info=True)
         
         # If database save worked, return success
@@ -1001,8 +1159,17 @@ def render_consultation_cta():
             submitted = st.form_submit_button("📤 Request Consultation", type="primary", use_container_width=True)
             
             if submitted:
-                if not email or "@" not in email:
-                    st.error("Please enter a valid email address")
+                # Validate inputs using centralized validation
+                from utils.validation import validate_consultation_input
+                
+                is_valid, error_msg = validate_consultation_input(
+                    email=email,
+                    name=name if name else None,
+                    message=message if message else None
+                )
+                
+                if not is_valid:
+                    st.error(f"❌ {error_msg}")
                 else:
                     state = get_sourcing_state()
                     result = state.get_result()

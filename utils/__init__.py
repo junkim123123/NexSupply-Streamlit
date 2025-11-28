@@ -23,6 +23,25 @@ from utils.prompts import (
     build_hybrid_prompt,
     HYBRID_SYSTEM_PROMPT,
 )
+from utils.validation import (
+    validate_query,
+    validate_context,
+    validate_email,
+    validate_name,
+    validate_message,
+    validate_uploaded_file,
+    validate_analysis_input,
+    validate_consultation_input,
+)
+from utils.logger import (
+    log_structured,
+    log_error,
+    log_warning,
+    log_info,
+    build_analysis_context,
+    build_email_context,
+    build_db_context,
+)
 
 __all__ = [
     # Config
@@ -55,4 +74,21 @@ __all__ = [
     "build_image_analysis_prompt",
     "build_hybrid_prompt",
     "HYBRID_SYSTEM_PROMPT",
+    # Validation
+    "validate_query",
+    "validate_context",
+    "validate_email",
+    "validate_name",
+    "validate_message",
+    "validate_uploaded_file",
+    "validate_analysis_input",
+    "validate_consultation_input",
+    # Structured Logging
+    "log_structured",
+    "log_error",
+    "log_warning",
+    "log_info",
+    "build_analysis_context",
+    "build_email_context",
+    "build_db_context",
 ]
