@@ -1,0 +1,13 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.nexsupply.app",
+      "sha256_cert_fingerprints": [
+        "PLACEHOLDER: Bubblewrap으로 TWA 빌드 후 여기에 실제 SHA256 지문을 입력하세요"
+      ]
+    }
+  }
+]
+
