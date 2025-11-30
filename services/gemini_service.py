@@ -323,14 +323,19 @@ class GeminiService:
                         elif error:
                             # Fallback to old parsing if validation fails
                             logger.warning(f"Extraction validation failed: {error}, using fallback parser")
+                            print(f"[GeminiService] Extraction validation error: {error}")
                             data, parse_error = self._parse_json_response(response.text)
                             if not parse_error and data:
                                 extracted_values = normalize_extracted_values(data)
                                 logger.info(f"Fallback extraction successful: {extracted_values}")
+                            else:
+                                print(f"[GeminiService] Fallback parsing also failed: {parse_error}")
                 except ImportError as e:
                     logger.warning(f"Extraction module not available: {e}, using fallback parser")
+                    print(f"[GeminiService] ImportError: {e}")
                 except Exception as e:
                     logger.warning(f"Extraction failed: {e}, using fallback parser", exc_info=True)
+                    print(f"[GeminiService] Extraction exception: {type(e).__name__}: {e}")
             
             # Step 2: Use extracted values or fallback to input parser
             if extracted_values:
