@@ -1,3 +1,8 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# ===========================================
+# Python / Streamlit
+# ===========================================
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -50,10 +55,8 @@ coverage.xml
 *.mo
 *.pot
 
-# Environments
-.env
+# Virtual environments
 .venv
-env/
 venv/
 ENV/
 env.bak/
@@ -63,21 +66,66 @@ venv.bak/
 .streamlit/secrets.toml
 # Note: .streamlit/secrets.toml.example is safe to commit (it's a template)
 
-# IDE
-.idea/
-.vscode/
-*.swp
-*.swo
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Project specific
-*.log
-temp/
+# Database files
 *.db
 nexsupply_logs.db
 *.sqlite
 *.sqlite3
 
+# ===========================================
+# Node.js / Next.js
+# ===========================================
+# dependencies
+/node_modules
+/.pnp
+.pnp.js
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# local env files
+.env
+.env.local
+.env*.local
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# ===========================================
+# IDE
+# ===========================================
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ===========================================
+# OS
+# ===========================================
+Thumbs.db
+
+# ===========================================
+# Project specific
+# ===========================================
+*.log
+temp/
