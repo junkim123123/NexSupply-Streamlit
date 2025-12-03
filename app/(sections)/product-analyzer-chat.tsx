@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect, FormEvent, useMemo } from 'react';
-import { signIn } from 'next-auth/react';
 import { Loader2, CheckCircle } from 'lucide-react';
 import type { ProductAnalysis } from '@/lib/product-analysis/schema';
 import {
@@ -16,6 +15,7 @@ import { useAuth } from '@/lib/auth';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ProductAnalysisFeedback } from '@/components/product-analysis-feedback';
+import SignInModal from '@/components/sign-in-modal';
 
 interface ProductAnalyzerChatProps {
   onAnalysisComplete: (analysis: ProductAnalysis) => void;
@@ -37,21 +37,24 @@ export default function ProductAnalyzerChat({ onAnalysisComplete, source }: Prod
   const [leadEmail, setLeadEmail] = useState('');
   const [leadStatus, setLeadStatus] = useState<'idle' | 'submitting' | 'success' | 'error'>('idle');
   const [error, setError] = useState<string | null>(null);
+  const [showSignInModal, setShowSignInModal] = useState(false);
   const { isAuthenticated, isLoading: isAuthLoading, userId } = useAuth();
 
+  // Initialize first message - show intro, then wait for user to start
   useEffect(() => {
-    if (state.messages.length === 0) {
+    if (state.messages.length === 0 && isAuthenticated && !isAuthLoading) {
       setState(prevState => ({
         ...prevState,
         messages: [
           {
             role: 'assistant',
-            content: "Hello! I'm the NexSupply Copilot. I'll ask about 3-5 quick questions to help you get a sourcing analysis. You can type your answers naturally."
+            content: "Hello! I'm the NexSupply Copilot. I'll ask about 3-5 quick questions to help you get a sourcing analysis. What product are you looking to source?"
           }
-        ]
+        ],
+        next_focus_field: 'product_idea', // Set initial focus to show that we're waiting for product input
       }));
     }
-  }, [state.messages.length]);
+  }, [state.messages.length, isAuthenticated, isAuthLoading]);
 
   const progress = useMemo(() => {
     const fields = [
@@ -259,11 +262,18 @@ export default function ProductAnalyzerChat({ onAnalysisComplete, source }: Prod
   }
 
   if (!isAuthenticated) {
-    return <SignInPrompt />;
+    return (
+      <>
+        {showSignInModal && <SignInModal onClose={() => setShowSignInModal(false)} />}
+        <SignInPrompt onOpenModal={() => setShowSignInModal(true)} />
+      </>
+    );
   }
 
   return (
-    <div className="flex flex-col h-full min-h-[600px]">
+    <>
+      {showSignInModal && <SignInModal onClose={() => setShowSignInModal(false)} />}
+      <div className="flex flex-col h-full min-h-[600px]">
       {/* Header */}
       <div className="text-center mb-6 pb-6 border-b border-subtle-border">
         <h3 className="card-title mb-2">NexSupply Copilot</h3>
@@ -428,23 +438,19 @@ export default function ProductAnalyzerChat({ onAnalysisComplete, source }: Prod
           </p>
         </>
       )}
-    </div>
+      </div>
+    </>
   );
 }
 
-const SignInPrompt = () => (
+const SignInPrompt = ({ onOpenModal }: { onOpenModal: () => void }) => (
   <div className="text-center min-h-[400px] flex flex-col justify-center items-center">
     <h3 className="card-title mb-4">Copilot requires sign-in</h3>
     <p className="helper-text max-w-sm mb-6">
       To use the Conversational Copilot and save your progress, please sign in.
     </p>
-    <div className="flex flex-col sm:flex-row gap-4">
-      <Button onClick={() => signIn('google')} size="lg">
-        Continue with Google
-      </Button>
-      <Button onClick={() => signIn('email')} size="lg" variant="outline">
-        Continue with Email
-      </Button>
-    </div>
+    <Button onClick={onOpenModal} size="lg">
+      Sign In to Continue
+    </Button>
   </div>
 );

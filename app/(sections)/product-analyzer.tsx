@@ -254,61 +254,61 @@ export default function ProductAnalyzer({ source }: { source?: string }) {
             </div>
           </Card>
 
-          {!showLeadForm ? (
+             {!showLeadForm ? (
             <Button 
-              onClick={() => setShowLeadForm(true)}
+                onClick={() => setShowLeadForm(true)}
               className="w-full"
               size="lg"
-            >
-              Get a Sourcing Quote
+              >
+                Get a Sourcing Quote
             </Button>
-          ) : (
+            ) : (
             <Card>
               <h3 className="card-title mb-4">Talk to a Sourcing Expert</h3>
-              {leadStatus === 'success' ? (
+                {leadStatus === 'success' ? (
                 <div className="text-center text-success">
-                  <CheckCircle className="h-12 w-12 mx-auto mb-4" />
+                    <CheckCircle className="h-12 w-12 mx-auto mb-4" />
                   <p className="helper-text">Thanks! We've received your request and will get back to you shortly.</p>
-                </div>
-              ) : (
-                <form onSubmit={handleLeadSubmit}>
-                  <div className="space-y-4">
-                    <input
-                      type="text"
-                      placeholder="Your Name"
-                      value={leadName}
-                      onChange={(e) => setLeadName(e.target.value)}
+                  </div>
+                ) : (
+                  <form onSubmit={handleLeadSubmit}>
+                    <div className="space-y-4">
+                      <input
+                        type="text"
+                        placeholder="Your Name"
+                        value={leadName}
+                        onChange={(e) => setLeadName(e.target.value)}
                       className="w-full h-12 px-4 rounded-lg bg-surface border border-subtle-border text-foreground placeholder-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
-                      required
-                    />
-                    <input
-                      type="email"
-                      placeholder="Your Email"
-                      value={leadEmail}
-                      onChange={(e) => setLeadEmail(e.target.value)}
+                        required
+                      />
+                      <input
+                        type="email"
+                        placeholder="Your Email"
+                        value={leadEmail}
+                        onChange={(e) => setLeadEmail(e.target.value)}
                       className="w-full h-12 px-4 rounded-lg bg-surface border border-subtle-border text-foreground placeholder-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
-                      required
-                    />
+                        required
+                      />
                     <Button
-                      type="submit"
-                      disabled={leadStatus === 'submitting'}
+                        type="submit"
+                        disabled={leadStatus === 'submitting'}
                       className="w-full"
                       size="lg"
-                    >
-                      {leadStatus === 'submitting' ? (
-                        <Loader2 className="h-5 w-5 animate-spin mx-auto" />
-                      ) : (
-                        'Request Sourcing Help'
-                      )}
+                      >
+                        {leadStatus === 'submitting' ? (
+                          <Loader2 className="h-5 w-5 animate-spin mx-auto" />
+                        ) : (
+                          'Request Sourcing Help'
+                        )}
                     </Button>
-                  </div>
+                    </div>
                   {leadStatus === 'error' && (
                     <p className="mt-2 text-sm text-destructive">Something went wrong. Please try again.</p>
                   )}
-                </form>
-              )}
+                  </form>
+                )}
             </Card>
-          )}
+            )}
 
           {/* Alpha Disclaimer and Feedback */}
           <ProductAnalysisFeedback analysis={analysis} mode="quick_scan" source={source} />
@@ -415,6 +415,10 @@ export default function ProductAnalyzer({ source }: { source?: string }) {
                   <p className="helper-text mb-3">If your idea is still vague, let our copilot help you structure it.</p>
                   <Button
                     onClick={() => {
+                      if (!isAuthenticated) {
+                        setShowSignInModal(true);
+                        return;
+                      }
                       setAnalysis(null);
                       setError('');
                       setViewMode('chat');
@@ -455,8 +459,8 @@ export default function ProductAnalyzer({ source }: { source?: string }) {
                 <ProductAnalyzerChat 
                   source={source} 
                   onAnalysisComplete={(result) => {
-                    setAnalysis(result);
-                    setViewMode('form');
+                setAnalysis(result);
+                setViewMode('form');
                   }} 
                 />
               </Card>
